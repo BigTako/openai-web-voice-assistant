@@ -1,23 +1,23 @@
 const express = require('express');
-const cors = require('cors')
+const cors = require('cors');
 
-require("dotenv").config();
+require('dotenv').config();
 const OpenAI = require('openai');
 const { OPENAI_API_KEY, ASSISTANT_ID } = process.env;
 
 // Setup Express
 const app = express();
 app.use(express.json());
-app.use(cors()) // allow CORS for all origins
+app.use(cors()); // allow CORS for all origins
 
 // Set up OpenAI Client
 const openai = new OpenAI({
-    apiKey: OPENAI_API_KEY,
+  apiKey: OPENAI_API_KEY,
 });
 
 // Assistant can be created via API or UI
-const assistantId = ASSISTANT_ID
-let pollingInterval
+const assistantId = ASSISTANT_ID;
+let pollingInterval;
 
 // ========================
 // OpenAI assistant section
@@ -25,89 +25,108 @@ let pollingInterval
 
 // Set up a Thread
 async function createThread() {
-    console.log('Creating a new thread...');
-    const thread = await openai.beta.threads.create();
-    return thread;
+  console.log('Creating a new thread...');
+  const thread = await openai.beta.threads.create();
+  return thread;
 }
 
 async function addMessage(threadId, message) {
-    console.log('Adding a new message to thread: ' + threadId);
-    const response = await openai.beta.threads.messages.create(
-        threadId,
-        {
-            role: "user",
-            content: message
-        }
-    );
-    return response;
+  console.log('Adding a new message to thread: ' + threadId);
+  const response = await openai.beta.threads.messages.create(threadId, {
+    role: 'user',
+    content: message,
+  });
+  return response;
 }
 
 async function runAssistant(threadId) {
-    console.log('Running assistant for thread: ' + threadId)
-    const response = await openai.beta.threads.runs.create(
-        threadId,
-        { 
-          assistant_id: assistantId
-          // Make sure to not overwrite the original instruction, unless you want to
-        }
-      );
+  console.log('Running assistant for thread: ' + threadId);
+  const response = await openai.beta.threads.runs.create(threadId, {
+    assistant_id: assistantId,
+    // Make sure to not overwrite the original instruction, unless you want to
+  });
 
-    console.log(response)
+  console.log(response);
 
-    return response;
+  return response;
 }
 
 async function checkingStatus(res, threadId, runId) {
-    const runObject = await openai.beta.threads.runs.retrieve(
-        threadId,
-        runId
-    );
+  const runObject = await openai.beta.threads.runs.retrieve(threadId, runId);
 
-    const status = runObject.status;
-    console.log(runObject)
-    console.log('Current status: ' + status);
-    
-    if(status == 'completed') {
-        clearInterval(pollingInterval);
+  const status = runObject.status;
+  console.log(runObject);
+  console.log('Current status: ' + status);
 
-        const messagesList = await openai.beta.threads.messages.list(threadId);
-        const lastMessage = messagesList.body.data[0].content[0].text.value
+  if (status == 'completed') {
+    clearInterval(pollingInterval);
 
-        res.json({ message: lastMessage });
-    }
+    const messagesList = await openai.beta.threads.messages.list(threadId);
+    const lastMessage = messagesList.body.data[0].content[0].text.value;
+
+    res.json({ message: lastMessage });
+  }
 }
 
 // ========================
 //       Route server
 // ========================
 app.get('/', (req, res) => {
-    res.send('Hello World!');
-})
+  res.send('Hello World!');
+});
 
 // Open a new thread
 app.get('/thread', (req, res) => {
-    createThread().then(thread => {
-        res.json({ threadId: thread.id });
-    });
-})
-
-app.post('/message', async (req, res) => {
-    const { message, threadId } = req.body;
-    addMessage(threadId, message).then(message => {
-        // res.json({ messageId: message.id });
-
-        // Run the assistant
-        runAssistant(threadId).then(run => {
-            const runId = run.id;           
-            
-            // Check the status
-            pollingInterval = setInterval(() => {
-                checkingStatus(res, threadId, runId);
-            }, 500);
-        });
-    });
+  createThread().then((thread) => {
+    res.json({ threadId: thread.id });
+  });
 });
 
+const assistantInstruction = `
+    You a support aget in real estate company. If user wants to search for real estate, please ask user to name such search criterias: count of bathrooms, count of bedrooms, minimal price, maximal price, minimal amount of parking spaces, maximal amount of parking spaces.
+If the client has mentioned all the data described above - RESPOND EXACTLY: "Thanks! Now i will search for all relevant real estate for you. [URL](constructed_url)". Here construct a url(constructed_url) with base http://127.0.0.1:5500/frontend/index.html and such seach params. 
+Constructed url inlude into text as - use EXACTLY this format, just replace constructed_url with actuall URL with search paramenters.
+1.\`bathrooms\` -  count of bathrooms, possible values are \`all, 1, 2, 3, 4, 5, 6\`, try to fit value given by user into one the given values, if you can't set value to 'all'
+2. \`bedrooms\` - count of bedrooms, possible values are \`all, 1, 2, 3, 4, 5, 6\`, try to fit value given by user into one the given values, if you can't set value to 'all'
+3. priceMin - minimal price, any number (minimal and default is 1500), try to fit value given by user into one the given values, if you can't set value to 1500
+4. priceMax  - maximal price, any number (max and default is 1500000, try to fit value given by user into one the given values, if you can't set value to 1500000
+5. parkingSpacesMin  - minimal amount of parking spaces , any number (default 0) , try to fit value given by user into one the given values, if you can't set value to 0
+6. parkingSpacesMax - maximal amount of parking spaces, any number (default 6), try to fit value given by user into one the given values, if you can't set value to 6
+7. keywords - array of strings, try to make keywords from the leaving information methioned by user (e.g. "I want an appartment with swimming pool and tent - keywords:["pool", "tent", "apprtment"]
+
+all the parameters are optional, include them to url ONLY THEN user explicitly mentioned them
+`;
+
+app.post('/message', async (req, res) => {
+  const { message, threadId, prevResponseId } = req.body;
+  console.log(`[${prevResponseId}] Got message ${message}. Processing...`);
+  const response = await openai.responses.create({
+    model: 'o4-mini',
+    stream: false,
+    instructions: assistantInstruction,
+    reasoning: { effort: 'medium' },
+    previous_response_id: prevResponseId,
+    input: message,
+  });
+  const result = {
+    message: response?.output_text,
+    responseId: response?.id,
+  };
+  res.status(200).json(result);
+  //   addMessage(threadId, message).then((message) => {
+  //     // res.json({ messageId: message.id });
+
+  //     // Run the assistant
+  //     runAssistant(threadId).then((run) => {
+  //       const runId = run.id;
+
+  //       // Check the status
+  //       pollingInterval = setInterval(() => {
+  //         checkingStatus(res, threadId, runId);
+  //       }, 500);
+  //     });
+  //   });
+});
 
 // Start the server
 const PORT = process.env.PORT || 3000;

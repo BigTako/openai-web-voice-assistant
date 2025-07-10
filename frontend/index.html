@@ -1,36 +1,49 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI Voice Assistant</title>
-</head>
-<body>
-
+  </head>
+  <body>
     <button id="record">Record</button>
     <button id="stop">Stop</button>
 
     <div id="output">Output</div>
-    
 
     <script>
-        let threadId = null;
-        
-        // onload
-        window.onload = function() {
-            fetch('http://localhost:3000/thread')
-                .then(response => response.json())
-                .then(data => {
-                    threadId = data.threadId;
-                });
-        }
+      let threadId = null;
+      let prevResponseId = null;
+      //   document.getElementById('record').disabled = true;
+      //   document.getElementById('stop').disabled = true;
+      console.log('start...');
+      // onload
+      //   window.onload = function () {
+      //     fetch('http://localhost:3000/thread')
+      //       .then((response) => response.json())
+      //       .then((data) => {
+      //         threadId = data.threadId;
+      //         prevResponseId = data.responseId;
+      //         document.getElementById('record').disabled = false;
+      //         document.getElementById('stop').disabled = false;
+      //       });
+      //   };
 
+      // Set up
+      const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+      const SpeechGrammarList =
+        window.SpeechGrammarList || window.webkitSpeechGrammarList;
+      const SpeechRecognitionEvent =
+        window.SpeechRecognitionEvent || window.webkitSpeechRecognitionEvent;
 
-        // Set up
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const SpeechGrammarList = window.SpeechGrammarList || window.webkitSpeechGrammarList;
-        const SpeechRecognitionEvent = window.SpeechRecognitionEvent || window.webkitSpeechRecognitionEvent;
-
+      if (!SpeechRecognition) {
+        alert(
+          'Speech Recognition is not supported in this browser. Please use Chrome, Edge, or another Chromium-based browser.'
+        );
+        document.getElementById('record').disabled = true;
+        document.getElementById('stop').disabled = true;
+      } else {
         const recognition = new SpeechRecognition();
         const speechRecognitionList = new SpeechGrammarList();
 
@@ -40,88 +53,107 @@
         recognition.interimResults = false;
         recognition.maxAlternatives = 1;
 
-
         // Start recording
-        document.getElementById('record').onclick = function() {
-            recognition.start();
-        }
+        document.getElementById('record').onclick = function () {
+          recognition.start();
+        };
 
         // Stop recording
-        document.getElementById('stop').onclick = function() {
-            recognition.stop();
-            console.log('Stopped recording.');
-        }
-
+        document.getElementById('stop').onclick = function () {
+          recognition.stop();
+          console.log('Stopped recording.');
+        };
+        recognition.audiostart = function (event) {
+          console.log('User started capturing an audio');
+        };
+        recognition.audioend = function (event) {
+          console.log('User finished capturing an audio');
+        };
+        recognition.error = function (event) {
+          console.log('Error while capturing the audio');
+        };
         // Output
-        recognition.onresult = async function(event) {
-            // Get the latest transcript 
-            const lastItem = event.results[event.results.length - 1]
-            const transcript = lastItem[0].transcript;
+        recognition.onresult = async function (event) {
+          // Get the latest transcript
+          const lastItem = event.results[event.results.length - 1];
+          const transcript = lastItem[0].transcript;
 
-            const newText = "<p>" + transcript + "</p>";
-            document.getElementById('output').insertAdjacentHTML("afterbegin", newText);
+          const newText = '<p>' + transcript + '</p>';
+          document
+            .getElementById('output')
+            .insertAdjacentHTML('afterbegin', newText);
 
-            recognition.stop();
-            await sendMessage(transcript);
-        }
+          recognition.stop();
+          console.log(`Send message: ${transcript}`);
+          await sendMessage(transcript).then(() => {
+            console.log('recevied and told the messsage');
+          });
+        };
 
-        recognition.onspeechend = function() {
-            recognition.stop();
-        }
+        recognition.onspeechend = function () {
+          recognition.stop();
+        };
 
         // SpeechSynthesis
-        let synthesis = null
+        let synthesis = null;
         if ('speechSynthesis' in window) {
-            synthesis = window.speechSynthesis;
+          synthesis = window.speechSynthesis;
         } else {
-             console.log('Text-to-speech not supported.');
+          console.log('Text-to-speech not supported.');
         }
 
         async function sendMessage(message) {
-            const response = await fetch('http://localhost:3000/message', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ message, threadId })
-            });
+          const response = await fetch('http://localhost:3000/message', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ message, threadId, prevResponseId }),
+          });
 
-            const data = await response.json();
+          const data = await response.json();
+          const rawMessage = data.message;
+          const chatMessage = rawMessage.replace(/\[URL\]\(.*\)/, '');
+          const match = rawMessage.match(/\[URL\]\((.*?)\)/);
 
-            const newText = "<p>" + data.message + "</p>";
-            document.getElementById('output').insertAdjacentHTML("afterbegin", newText);
+          const url = match ? match[1] : null;
 
-            speak(data.message);
+          console.log({ url });
+
+          const newText = '<p>' + chatMessage + '</p>';
+          document
+            .getElementById('output')
+            .insertAdjacentHTML('afterbegin', newText);
+
+          speak(chatMessage);
         }
 
         function speak(message) {
-            if (synthesis) {
-                const utterance = new SpeechSynthesisUtterance(message);
-                synthesis.speak(utterance);
-            }
+          if (synthesis) {
+            const utterance = new SpeechSynthesisUtterance(message);
+            synthesis.speak(utterance);
+          }
         }
-
-
-
+      }
     </script>
 
-<style>
-body {
-    margin: 50px auto;
-    width: 500px;
-}
+    <style>
+      body {
+        margin: 50px auto;
+        width: 500px;
+      }
 
-#output {
-    margin-top: 20px;
-    border: 1px solid #000;
-    padding: 10px;
-    height: 200px;
-    overflow-y: scroll;
-}
+      #output {
+        margin-top: 20px;
+        border: 1px solid #000;
+        padding: 10px;
+        height: 200px;
+        overflow-y: scroll;
+      }
 
-#output p:nth-child(even) {
-    background-color: #f8f6b1;
-}
-</style>
-</body>
+      #output p:nth-child(even) {
+        background-color: #f8f6b1;
+      }
+    </style>
+  </body>
 </html>

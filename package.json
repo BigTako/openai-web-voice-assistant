@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "cd ./backend && npm start"
+    "dev": "concurrently \"cd ./backend && npm run dev\" \"cd ./frontend && npm run dev\""
   },
   "repository": {
     "type": "git",
@@ -17,5 +17,8 @@
   "bugs": {
     "url": "https://github.com/hilmanski/simple-ai-voice-assistant-openai-demo/issues"
   },
-  "homepage": "https://github.com/hilmanski/simple-ai-voice-assistant-openai-demo#readme"
+  "homepage": "https://github.com/hilmanski/simple-ai-voice-assistant-openai-demo#readme",
+  "dependencies": {
+    "concurrently": "^9.2.0"
+  }
 }

@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/hilmanski/simple-ai-voice-assistant-openai-demo#readme",
   "dependencies": {
-    "concurrently": "^9.2.0"
+    "concurrently": "^9.2.0",
+    "socket.io": "^4.8.1"
   }
 }

@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
+const { Server: SocketIOServer } = require('socket.io');
 
 require('dotenv').config();
 const OpenAI = require('openai');
@@ -54,8 +56,58 @@ app.post('/message', async (req, res) => {
   res.status(200).json(result);
 });
 
+const server = http.createServer(app);
+const io = new SocketIOServer(server, {
+  // optional settings
+  cors: { origin: '*' },
+});
+
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+  // STT events
+
+  // Agent events
+
+  // TTS events
+
+  // Shared
+
+  // socket.on('speak', async ({ text }) => {
+  //   try {
+  //     console.log('Started receiving speaking requests...');
+  //     const response = await openai.audio.speech.create({
+  //       model: 'gpt-4o-mini-tts',
+  //       voice: 'coral',
+  //       input: text,
+  //       instructions: 'Speak in a cheerful and positive tone.',
+  //       response_format: 'mp3', // stream-friendly
+  //     });
+
+  //     let chunkIndex = 0;
+  //     const stream = response.body; // Node Readable
+  //     console.log(stream);
+
+  //     for await (const chunk of stream) {
+  //       socket.emit('audio-chunk', {
+  //         data: chunk,
+  //         index: chunkIndex++,
+  //         timestamp: Date.now(),
+  //       });
+  //     }
+  //     socket.emit('audio-end');
+  //   } catch (err) {
+  //     console.log(err);
+  //     socket.emit('audio-error', { message: err.message });
+  //   }
+  // });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
+});
+
 // Start the server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

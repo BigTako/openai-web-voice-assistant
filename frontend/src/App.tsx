@@ -35,7 +35,6 @@ function Message({ content, from }: TMessageProps) {
 }
 
 function App() {
-  // const [count, setCount] = useState(0)
   const chatHistory = [
     {
       from: 'user',
@@ -60,6 +59,18 @@ function App() {
 
   const [isRecording, setIsRecording] = useState(false);
   const [isSubmittingRecording, setIsSubmittingRecording] = useState(false);
+
+  const handleSubmitVoice = () => {
+    setIsSubmittingRecording(true);
+  };
+
+  const handleStartRecording = () => {
+    setIsRecording(true);
+  };
+
+  const handleCancelRecording = () => {
+    setIsRecording(false);
+  };
 
   return (
     <div
@@ -106,47 +117,65 @@ function App() {
               padding: 10,
             }}
           >
-            <div>Sheech visualizer</div>
             <div
               style={{
                 display: 'flex',
                 flexDirection: 'row',
-                marginLeft: 'auto',
-                gap: 10,
+                justifyContent: 'space-between',
               }}
             >
-              <button
-                title='Cancel recording'
-                onClick={() => setIsRecording(false)}
+              <div
                 style={{
-                  backgroundColor: 'transparent',
-                  borderRadius: '100%',
-                  padding: 7,
                   display: 'flex',
-                  justifyContent: 'center',
                   alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 20,
                 }}
               >
-                <XIcon size={20} />
-              </button>
-              <button
-                title='Submit speech'
+                <span className='recording'></span>
+                <div>Recording...</div>
+              </div>
+              <div
                 style={{
-                  backgroundColor: 'transparent',
-                  borderRadius: '100%',
-                  padding: 7,
                   display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  gap: 10,
                 }}
-                onClick={() => setIsSubmittingRecording(true)}
               >
-                {isSubmittingRecording ? (
-                  <span className='loader'></span>
-                ) : (
-                  <CheckIcon size={20} />
-                )}
-              </button>
+                <button
+                  title='Cancel recording'
+                  onClick={handleCancelRecording}
+                  style={{
+                    backgroundColor: 'transparent',
+                    borderRadius: '100%',
+                    padding: 7,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  <XIcon size={20} />
+                </button>
+                <button
+                  title='Submit speech'
+                  style={{
+                    backgroundColor: 'transparent',
+                    borderRadius: '100%',
+                    padding: 7,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                  onClick={handleSubmitVoice}
+                >
+                  {isSubmittingRecording ? (
+                    <span className='loader'></span>
+                  ) : (
+                    <CheckIcon size={20} />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -157,7 +186,7 @@ function App() {
               padding: 10,
               borderRadius: 20,
             }}
-            onClick={() => setIsRecording(true)}
+            onClick={handleStartRecording}
           >
             <span style={{ color: '#303030' }}>
               <strong>Start recording</strong>

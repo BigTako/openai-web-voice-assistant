@@ -3,7 +3,6 @@ const cors = require('cors');
 const http = require('http');
 const fs = require('fs');
 const { Server: SocketIOServer } = require('socket.io');
-var ss = require('socket.io-stream');
 require('dotenv').config();
 const OpenAI = require('openai');
 const { OPENAI_API_KEY } = process.env;
@@ -63,26 +62,48 @@ const io = new SocketIOServer(server, {
   cors: { origin: '*' },
 });
 
+/**
+ * Stores active voice streaming file names.
+ */
+const activeStreams = new Map();
+
 const VOICE_FILES_DIR = './voiceFiles';
+const VOICE_FILE_EXTENTION = 'webm';
+
+function voiceFilePath(fileName) {
+  return `${VOICE_FILES_DIR}/${fileName}.${VOICE_FILE_EXTENTION}`;
+}
+
 if (!fs.existsSync(VOICE_FILES_DIR)) {
   fs.mkdirSync(VOICE_FILES_DIR);
+}
+
+function getStreamByFilename(fileName) {
+  if (!fileName) throw new Error(`Error: filename is not provided`);
+
+  const stream = activeStreams.get(fileName);
+
+  if (!stream)
+    throw new Error('Error: stream is not initialized by this filename');
+
+  return stream;
 }
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   // STT events
-  socket.on('cancel-transcription', (body) => {
-    // {filename: string}
-    console.log('[LOG] cancel-transcription called');
-    try {
-      // cancel write stream
-      // delete created file
-      // return message that stream is canceled successfuly
-    } catch (error) {
-      console.log(error);
-      // return message that an error occured while trinscribtion
-    }
-  });
+  // socket.on('cancel-transcription', (body) => {
+  //   // {fileName: string}
+  //   console.log('[LOG] cancel-transcription called');
+  //   try {
+  //     // cancel write stream
+  //     // delete created file
+  //     // return message that stream is canceled successfuly
+  //   } catch (error) {
+  //     console.log(error);
+  //     // return message that an error occured while trinscribtion
+  //   }
+  // });
 
   socket.on('get-transacription', (body) => {
     // {filename: string}
@@ -98,37 +119,148 @@ io.on('connection', (socket) => {
     }
   });
 
-  ss(socket).on('start-voice-file-stream', function (stream, body) {
-    // body = {filename: string}
-    try {
-      const { filename } = body;
+  // ss(socket).on('start-voice-file-stream', function (stream, {}) {
+  //   // body = {filename: string}
+  //   try {
+  //     const filename = `${socket.id}-${Date.now()}`;
+  //     const filePath = `${VOICE_FILES_DIR}/${filename}`;
+  //     stream.pipe(fs.createWriteStream(filePath));
+  //     const s = fs.createWriteStream(filePath)
+  //     // gets filename
+  //     // starts writting stream and pipes incomming stream to create writes stream
+  //     // returns message which says writting is successful with filename
+  //     return {
 
-      const filePath = `${VOICE_FILES_DIR}/${filename}`;
-      stream.pipe(fs.createWriteStream(filePath));
-      // gets filename
-      // starts writting stream and pipes incomming stream to create writes stream
-      // returns message which says writting is successful
+  //     }
+  //   } catch (error) {
+  //     console.log(error);
+  //     // return message that an error occured while trinscribtion
+  //   }
+  // });
+
+  /**
+   * Creates new file write stream and returns it back.
+   * @returns - object with status and data (on failure with errorMessage set to error)
+   */
+  socket.on('voice-file-stream:init', (callback) => {
+    console.log('[LOG] voice-file-stream:init called');
+    try {
+      const fileName = `${socket.id}-${Date.now()}`;
+      const filePath = `${VOICE_FILES_DIR}/${fileName}.${VOICE_FILE_EXTENTION}`;
+      const writeStream = fs.createWriteStream(filePath);
+      activeStreams.set(fileName, writeStream);
+      callback({
+        status: 'success',
+        data: {
+          fileName,
+        },
+      });
     } catch (error) {
       console.log(error);
-      // return message that an error occured while trinscribtion
+      const message = error.message || 'Error while initializing voice stream.';
+      return {
+        status: 'error',
+        errorMessage: message,
+      };
     }
   });
 
-  socket.on('start-voice-file-stream', (body) => {
-    // {filename: string, stream: SocketStream}
-    console.log('[LOG] start-voice-file-stream called');
+  /**
+   * Receives chunk of voice and writes it to file.
+   * @param body - contains filename(streamid) and chunk itself
+   * @returns - object with status and data (on failure with errorMessage set to error)
+   */
+  socket.on('voice-file-stream:chunk', (body, callback) => {
+    console.log('[LOG] voice-file-stream:chunk called');
     try {
-      const { filename, stream } = body;
-      ss(socket).on('profile-image', function (stream, data) {
-        var filename = path.basename(data.name);
-        stream.pipe(fs.createWriteStream(filename));
+      // console.log({ body });
+      const { fileName, chunk } = body;
+
+      const stream = getStreamByFilename(fileName);
+
+      if (!stream.closed) {
+        stream.write(chunk, (error) => {
+          if (error) {
+            throw new Error(
+              `Error[voice-file-stream:init]: While writting chunk\n${error}`
+            );
+          }
+        });
+      }
+      callback({
+        status: 'success',
       });
-      // gets filename
-      // starts writting stream and pipes incomming stream to create writes stream
-      // returns message which says writting is successful
     } catch (error) {
       console.log(error);
-      // return message that an error occured while trinscribtion
+      const message =
+        error.message || 'Error while writting voice chunk to file.';
+
+      return {
+        status: 'error',
+        errorMessage: message,
+      };
+    }
+  });
+
+  /**
+   * Cancels voice file streaming with closing stream and deleting file.
+   * @param body - contains filename(streamid)
+   * @returns - object with status and data (on failure with errorMessage set to error)
+   */
+  socket.on('voice-file-stream:cancel', (body, callback) => {
+    console.log('[LOG] voice-file-stream:cancel called');
+    try {
+      // console.log({ body });
+      const { fileName } = body;
+
+      const stream = getStreamByFilename(fileName);
+
+      if (!stream.closed) {
+        stream.end();
+      }
+
+      const filePath = voiceFilePath(fileName);
+      fs.unlinkSync(filePath);
+
+      fs.callback({
+        status: 'success',
+      });
+    } catch (error) {
+      console.log(error);
+      const message =
+        error.message || 'Error while writting voice chunk to file.';
+
+      return {
+        status: 'error',
+        errorMessage: message,
+      };
+    }
+  });
+
+  /**
+   * Stop stream and remove it form active streams.
+   * @param body - contains filename(streamid)
+   * @returns - object with status and data (on failure with errorMessage set to error)
+   */
+  socket.on('voice-file-stream:destroy', (body, callback) => {
+    console.log('[LOG] voice-file-stream:destory called');
+    try {
+      // console.log({ body });
+      const { fileName } = body;
+      const stream = getStreamByFilename(fileName);
+
+      stream.end();
+      callback({
+        status: 'success',
+      });
+      return;
+    } catch (error) {
+      console.log(error);
+      const message = error.message || 'Error while closing voice stream.';
+      return {
+        status: 'error',
+        errorMessage: message,
+      };
     }
   });
   // Agent events

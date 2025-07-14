@@ -105,38 +105,39 @@ io.on('connection', (socket) => {
   //   }
   // });
 
-  socket.on('get-transacription', (body) => {
-    // {filename: string}
+  socket.on('get-transacription', async (body, callback) => {
+    // {fileName: string}
     try {
+      const { fileName } = body;
       console.log('[LOG] get-transacription called');
-      // gets the filename
-      // calls TTS LLM with filename to create a transcription
-      // gets the full text of transcription
-      // returns trascription
+
+      if (!fileName) throw new Error(`Error: filename is not provided`);
+
+      const filePath = voiceFilePath(fileName);
+      console.log(`Transcribing file ${filePath}`);
+
+      const transcription = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(filePath),
+        model: 'gpt-4o-transcribe',
+      }); // { text: string }
+      // console.log(
+      //   `Transcription finished: ${transcription?.text || 'no text'}`
+      // );
+
+      callback({
+        status: 'success',
+        data: transcription,
+      });
     } catch (error) {
       console.log(error);
+      const message = error.message || 'Error transcribing voice file.';
+      callback({
+        status: 'error',
+        errorMessage: message,
+      });
       // return message that an error occured while trinscribtion
     }
   });
-
-  // ss(socket).on('start-voice-file-stream', function (stream, {}) {
-  //   // body = {filename: string}
-  //   try {
-  //     const filename = `${socket.id}-${Date.now()}`;
-  //     const filePath = `${VOICE_FILES_DIR}/${filename}`;
-  //     stream.pipe(fs.createWriteStream(filePath));
-  //     const s = fs.createWriteStream(filePath)
-  //     // gets filename
-  //     // starts writting stream and pipes incomming stream to create writes stream
-  //     // returns message which says writting is successful with filename
-  //     return {
-
-  //     }
-  //   } catch (error) {
-  //     console.log(error);
-  //     // return message that an error occured while trinscribtion
-  //   }
-  // });
 
   /**
    * Creates new file write stream and returns it back.
@@ -158,10 +159,10 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.log(error);
       const message = error.message || 'Error while initializing voice stream.';
-      return {
+      callback({
         status: 'error',
         errorMessage: message,
-      };
+      });
     }
   });
 
@@ -194,11 +195,10 @@ io.on('connection', (socket) => {
       console.log(error);
       const message =
         error.message || 'Error while writting voice chunk to file.';
-
-      return {
+      callback({
         status: 'error',
         errorMessage: message,
-      };
+      });
     }
   });
 
@@ -229,11 +229,10 @@ io.on('connection', (socket) => {
       console.log(error);
       const message =
         error.message || 'Error while writting voice chunk to file.';
-
-      return {
+      callback({
         status: 'error',
         errorMessage: message,
-      };
+      });
     }
   });
 
@@ -257,10 +256,10 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.log(error);
       const message = error.message || 'Error while closing voice stream.';
-      return {
+      callback({
         status: 'error',
         errorMessage: message,
-      };
+      });
     }
   });
   // Agent events

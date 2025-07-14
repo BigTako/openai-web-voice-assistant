@@ -57,39 +57,11 @@ function Message({ message }: { message: TMessage }) {
 type TSenderType = 'user' | 'bot';
 
 function App() {
-  const chatHistory = useMemo(
-    () => [
-      {
-        from: 'user',
-        recordingFileName: '',
-        status: 'created',
-        content:
-          'i receive a stream of text(chunks) on front-end from backend, can i sound it out by chunks using openai library fro node.js?',
-      },
-      {
-        from: 'bot',
-        status: 'created',
-        content:
-          'Yes—you can have the OpenAI Node.js SDK spit out audio as soon as each chunk arrives, so you don’t have to wait for the full file before playing it.',
-      },
-      {
-        from: 'user',
-        recordingFileName: '',
-        status: 'created',
-        content: `Is there a separate instruction for incrementing the instruction address register in the CPU or it's done automaticaly when current instruction is executed? If automaticaly and the current instruction is JUMP, it has to overwrite the current instruction address, and then increment it since the JUMP instruction is executed, so it works weird`,
-      },
-      {
-        from: 'bot',
-        status: 'created',
-        content:
-          'There is no explicit “INC PC” instruction in almost any real CPU ISA; PC (or IP — Instruction Pointer) updating is baked into the fetch/decode hardware. Here’s roughly what happens each cycle:',
-      },
-    ],
-    []
-  ) as TMessage[];
+  const [chatHistory, setChatHistory] = useState<TMessage[]>([]);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isSubmittingRecording, setIsSubmittingRecording] = useState(false);
+  const [isMenuOpened, setIsMenuOpened] = useState(false);
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
 
@@ -104,12 +76,34 @@ function App() {
   const handleSubmitVoice = async () => {
     try {
       setIsSubmittingRecording(true);
-      console.log('Finished recording and started processing...');
+      console.log('Finished recording and started processing transcription...');
       recorder?.stop();
+      const response = (await socket.emitWithAck('get-transacription', {
+        fileName: pendingFileName,
+      })) as TSocketResponse<{ text: string }>;
+      checkResponseError(response);
+      const transcription = response.data?.text;
+      if (!transcription)
+        throw new Error('No transcription in the response, please try again.');
+
+      if (pendingFileName) {
+        setChatHistory((current) => [
+          ...current,
+          {
+            from: 'user',
+            status: 'created',
+            recordingFileName: pendingFileName,
+            content: transcription,
+          },
+        ]);
+      }
+      setIsMenuOpened(false);
     } catch (error) {
       console.log(error);
       pushError(error);
+    } finally {
       setPendingFileName(null);
+      setIsSubmittingRecording(false);
     }
   };
 
@@ -131,6 +125,7 @@ function App() {
   const handleStartRecording = async () => {
     try {
       console.log('Started recording voice...');
+      setIsMenuOpened(true);
       setIsRecording(true);
       const response = (await socket
         .emitWithAck('voice-file-stream:init')
@@ -138,9 +133,7 @@ function App() {
           console.log(data);
           return data;
         })) as TSocketResponse<{ fileName: string }>;
-
       checkResponseError(response);
-
       const filename = response.data?.fileName;
       console.log({ filename });
       if (filename) {
@@ -195,6 +188,7 @@ function App() {
               fileName: pendingFileName,
             }
           );
+          setIsRecording(false);
           checkResponseError(response);
         };
         recorder.start(500);
@@ -212,6 +206,8 @@ function App() {
       }
     }
   }, [pendingFileName, pushError]);
+
+  const nothingInChatYet = !chatHistory.length;
 
   return (
     <div
@@ -233,21 +229,37 @@ function App() {
       >
         <div
           style={{
-            display: 'flex',
-            flexDirection: 'column',
             width: '100%',
             height: 500,
             overflowY: 'scroll',
             overflowX: 'hidden',
-            padding: 10,
-            gap: 20,
           }}
         >
-          {chatHistory.map((message) => (
-            <Message message={message} />
-          ))}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              paddingRight: 25,
+              gap: 20,
+            }}
+          >
+            {nothingInChatYet ? (
+              <div
+                style={{
+                  display: 'flex',
+                  height: '100%',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                Nothing in chat yet
+              </div>
+            ) : (
+              chatHistory.map((message) => <Message message={message} />)
+            )}
+          </div>
         </div>
-        {isRecording ? (
+        {isMenuOpened ? (
           <div
             style={{
               display: 'flex',
@@ -266,23 +278,26 @@ function App() {
                 justifyContent: 'space-between',
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 20,
-                }}
-              >
-                <span className='recording'></span>
-                <div>Recording...</div>
-              </div>
+              {isRecording && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 20,
+                  }}
+                >
+                  <span className='recording'></span>
+                  <div>Recording...</div>
+                </div>
+              )}
               <div
                 style={{
                   display: 'flex',
                   flexDirection: 'row',
                   justifyContent: 'space-between',
                   gap: 10,
+                  marginLeft: 'auto',
                 }}
               >
                 <button

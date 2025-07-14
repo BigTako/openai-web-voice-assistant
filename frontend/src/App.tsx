@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckIcon, XIcon } from '@phosphor-icons/react';
 
 import './App.css';
+import { socket } from './utils/socketClient';
 
 type TMessageProps = {
   content: string;
@@ -71,6 +72,12 @@ function App() {
   const handleCancelRecording = () => {
     setIsRecording(false);
   };
+
+  useEffect(() => {
+    socket.on('connect', () => {});
+  }, []);
+
+  // console.log({ socket: socket.connected });
 
   return (
     <div

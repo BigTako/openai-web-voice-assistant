@@ -1,8 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const fs = require('fs');
 const { Server: SocketIOServer } = require('socket.io');
-
+var ss = require('socket.io-stream');
 require('dotenv').config();
 const OpenAI = require('openai');
 const { OPENAI_API_KEY } = process.env;
@@ -62,10 +63,74 @@ const io = new SocketIOServer(server, {
   cors: { origin: '*' },
 });
 
+const VOICE_FILES_DIR = './voiceFiles';
+if (!fs.existsSync(VOICE_FILES_DIR)) {
+  fs.mkdirSync(VOICE_FILES_DIR);
+}
+
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   // STT events
+  socket.on('cancel-transcription', (body) => {
+    // {filename: string}
+    console.log('[LOG] cancel-transcription called');
+    try {
+      // cancel write stream
+      // delete created file
+      // return message that stream is canceled successfuly
+    } catch (error) {
+      console.log(error);
+      // return message that an error occured while trinscribtion
+    }
+  });
 
+  socket.on('get-transacription', (body) => {
+    // {filename: string}
+    try {
+      console.log('[LOG] get-transacription called');
+      // gets the filename
+      // calls TTS LLM with filename to create a transcription
+      // gets the full text of transcription
+      // returns trascription
+    } catch (error) {
+      console.log(error);
+      // return message that an error occured while trinscribtion
+    }
+  });
+
+  ss(socket).on('start-voice-file-stream', function (stream, body) {
+    // body = {filename: string}
+    try {
+      const { filename } = body;
+
+      const filePath = `${VOICE_FILES_DIR}/${filename}`;
+      stream.pipe(fs.createWriteStream(filePath));
+      // gets filename
+      // starts writting stream and pipes incomming stream to create writes stream
+      // returns message which says writting is successful
+    } catch (error) {
+      console.log(error);
+      // return message that an error occured while trinscribtion
+    }
+  });
+
+  socket.on('start-voice-file-stream', (body) => {
+    // {filename: string, stream: SocketStream}
+    console.log('[LOG] start-voice-file-stream called');
+    try {
+      const { filename, stream } = body;
+      ss(socket).on('profile-image', function (stream, data) {
+        var filename = path.basename(data.name);
+        stream.pipe(fs.createWriteStream(filename));
+      });
+      // gets filename
+      // starts writting stream and pipes incomming stream to create writes stream
+      // returns message which says writting is successful
+    } catch (error) {
+      console.log(error);
+      // return message that an error occured while trinscribtion
+    }
+  });
   // Agent events
 
   // TTS events

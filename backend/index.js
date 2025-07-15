@@ -278,20 +278,92 @@ io.on('connection', (socket) => {
       const { prompt, formats } = body; // prompt: string, formats = ['text', 'voice']
       const result = await run(supportAgent, prompt, { stream: true });
 
-      if (formats.includes('text')) {
-        for await (const event of result) {
-          // these are the raw events from the model
-          if (event.type === 'raw_model_stream_event') {
-            const isDelta = event.data.type === 'output_text_delta';
-            const delta = event.data.delta;
-            if (isDelta && delta) {
+      // for await (const event of result) {
+      //   // these are the raw events from the model
+      //   if (event.type === 'raw_model_stream_event') {
+      //     const isDelta = event.data.type === 'output_text_delta';
+      //     const delta = event.data.delta;
+      //     if (isDelta && delta) {
+      //       if (formats.includes('text')) {
+      //         socket.emit('agent-response:text-chunk', delta);
+      //       }
+      //       if (formats.includes('voice')) {
+      //         const response = await openai.audio.speech.create({
+      //           model: 'gpt-4o-mini-tts',
+      //           voice: 'coral',
+      //           input: text,
+      //           instructions: 'Speak in a cheerful and positive tone.',
+      //           response_format: 'mp3', // stream-friendly
+      //         });
+
+      //       }
+      //     }
+      //   }
+      // }
+      const streamText = formats.includes('text');
+      const streamVoice = formats.includes('voice');
+      let textBuffer = '';
+      let sentenceBuffer = '';
+
+      for await (const event of result) {
+        if (event.type === 'raw_model_stream_event') {
+          const isDelta = event.data.type === 'output_text_delta';
+          const delta = event.data.delta;
+          if (isDelta && delta) {
+            if (streamText) {
               socket.emit('agent-response:text-chunk', delta);
+            }
+
+            if (streamVoice) {
+              sentenceBuffer += delta;
+
+              // Check if we have a complete sentence
+              if (sentenceBuffer.match(/[.!?]\s/)) {
+                const sentences = sentenceBuffer.split(/([.!?]\s)/);
+                const completeSentence = sentences[0] + (sentences[1] || '');
+
+                // Generate audio for complete sentence
+                const response = await openai.audio.speech.create({
+                  model: 'gpt-4o-mini-tts',
+                  voice: 'coral',
+                  input: completeSentence,
+                  instructions: 'Speak in a cheerful and positive tone.',
+                  response_format: 'mp3',
+                });
+
+                // Stream the audio chunks
+                for await (const chunk of response.body) {
+                  socket.emit('agent-response:audio-chunk', chunk);
+                }
+
+                // Update buffer with remaining text
+                sentenceBuffer = sentences.slice(2).join('');
+              }
             }
           }
         }
       }
 
+      // Handle any remaining text in buffer
+      if (streamVoice && sentenceBuffer.trim()) {
+        const response = await openai.audio.speech.create({
+          model: 'gpt-4o-mini-tts',
+          voice: 'coral',
+          input: sentenceBuffer,
+          instructions: 'Speak in a cheerful and positive tone.',
+          response_format: 'mp3',
+        });
+
+        for await (const chunk of response.body) {
+          socket.emit('agent-response:audio-chunk', chunk);
+        }
+      }
+
       await result.completed;
+
+      if (streamVoice) {
+        socket.emit('agent-response:audio-end');
+      }
 
       callback({ status: 'success' });
     } catch (error) {

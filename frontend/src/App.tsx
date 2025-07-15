@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckIcon, XIcon } from '@phosphor-icons/react';
 import './App.css';
 import { socket } from './utils/socketClient';
@@ -58,12 +58,18 @@ type TSenderType = 'user' | 'bot';
 
 function App() {
   const [chatHistory, setChatHistory] = useState<TMessage[]>([]);
-
   const [isRecording, setIsRecording] = useState(false);
   const [isSubmittingRecording, setIsSubmittingRecording] = useState(false);
   const [isMenuOpened, setIsMenuOpened] = useState(false);
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
+  const [isGettingAgentAnswer, setIsGettingAgentAnwer] = useState(false);
+
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const mediaSourceRef = useRef<MediaSource | null>(null);
+  const sourceBufferRef = useRef<SourceBuffer | null>(null);
+  const chunkQueueRef = useRef<ArrayBuffer[]>([]);
+  const isProcessingRef = useRef(false);
 
   function checkResponseError<T>(response: TSocketResponse<T>) {
     if (response.status === 'error') {
@@ -95,9 +101,14 @@ function App() {
             recordingFileName: pendingFileName,
             content: transcription,
           },
+          {
+            from: 'bot',
+            status: 'pending',
+          },
         ]);
       }
       setIsMenuOpened(false);
+      setIsGettingAgentAnwer(true); // trigger AI agent request
     } catch (error) {
       console.log(error);
       pushError(error);
@@ -135,7 +146,7 @@ function App() {
         })) as TSocketResponse<{ fileName: string }>;
       checkResponseError(response);
       const filename = response.data?.fileName;
-      console.log({ filename });
+      // console.log({ filename });
       if (filename) {
         setPendingFileName(filename);
       } else {
@@ -154,14 +165,15 @@ function App() {
     setIsRecording(false);
   };
 
-  console.log({ pendingFileName });
-
+  // recording voice from microfone
   useEffect(() => {
     if (pendingFileName) {
       async function streamAudio() {
+        // ask and access to micro
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: true,
         });
+
         const recorder = new MediaRecorder(stream, {
           mimeType: 'audio/webm;codecs=opus',
         });
@@ -207,152 +219,315 @@ function App() {
     }
   }, [pendingFileName, pushError]);
 
+  // request agent answer
+  useEffect(() => {
+    if (isGettingAgentAnswer) {
+      async function requestAgentAnswer() {
+        const lastUserMessage = chatHistory
+          .filter((message) => message.from === 'user')
+          .pop();
+        const response = await socket.emitWithAck('agent-answer:stream', {
+          prompt: lastUserMessage?.content,
+          formats: ['text', 'voice'],
+        });
+        checkResponseError(response);
+      }
+      try {
+        console.log('Requested agent answer...');
+        requestAgentAnswer();
+      } catch (error) {
+        console.log('Error while requesting agent answer');
+        console.log(error);
+        pushError(error);
+      } finally {
+        setIsGettingAgentAnwer(false);
+      }
+    }
+  }, [isGettingAgentAnswer, chatHistory, pushError]);
+
+  // get agent text answer chunk by chunk
+  useEffect(() => {
+    socket.on('agent-response:text-chunk', (chunk) => {
+      console.log(chunk);
+      setChatHistory((prev) => {
+        // Append delta to last assistant message
+        const updated = [...prev];
+        const idx = updated.length - 1;
+        const chatMessage = updated[idx];
+        if (chatMessage) {
+          // Create a new object instead of mutating the existing one
+          updated[idx] = {
+            ...chatMessage,
+            content: chatMessage.content ? chatMessage.content + chunk : chunk,
+            status: 'created',
+          };
+        }
+        return updated;
+      });
+    });
+    return () => {
+      socket.off('agent-response:text-chunk');
+    };
+  }, []);
+
+  // Initialize MediaSource once on component mount
+  useEffect(() => {
+    const mediaSource = new MediaSource();
+    mediaSourceRef.current = mediaSource;
+
+    if (audioRef.current) {
+      audioRef.current.src = URL.createObjectURL(mediaSource);
+      audioRef.current.preload = 'auto';
+    }
+
+    mediaSource.addEventListener('sourceopen', () => {
+      if (!sourceBufferRef.current) {
+        const sb = mediaSource.addSourceBuffer('audio/mpeg');
+        sb.mode = 'sequence';
+        sourceBufferRef.current = sb;
+
+        sb.addEventListener('updateend', () => {
+          isProcessingRef.current = false;
+          processNextChunk();
+        });
+      }
+    });
+
+    return () => {
+      // Cleanup on unmount
+      if (mediaSourceRef.current) {
+        if (mediaSourceRef.current.readyState === 'open') {
+          mediaSourceRef.current.endOfStream();
+        }
+        URL.revokeObjectURL(audioRef.current?.src || '');
+      }
+    };
+  }, []);
+
+  // Handle audio streaming for each agent response
+  useEffect(() => {
+    if (isGettingAgentAnswer) {
+      // Reset for new response
+      chunkQueueRef.current = [];
+      isProcessingRef.current = false;
+
+      // Clear existing buffer content if needed
+      const sb = sourceBufferRef.current;
+      if (sb && !sb.updating) {
+        try {
+          if (sb.buffered.length > 0) {
+            // remove everything from buffer
+            sb.remove(0, sb.buffered.end(sb.buffered.length - 1));
+          }
+        } catch (error) {
+          console.log('Error clearing buffer:', error);
+        }
+      }
+    }
+
+    const handleAudioChunk = (chunk: ArrayBuffer) => {
+      // console.log('received chunk');
+      chunkQueueRef.current.push(chunk);
+      processNextChunk();
+    };
+
+    const handleAudioEnd = () => {
+      const flush = () => {
+        if (!isProcessingRef.current && chunkQueueRef.current.length === 0) {
+          // Don't end the stream, just stop processing for this response
+          console.log('Audio response completed');
+        } else {
+          setTimeout(flush, 10);
+        }
+      };
+      flush();
+    };
+
+    socket.on('agent-response:audio-chunk', handleAudioChunk);
+    socket.on('agent-response:audio-end', handleAudioEnd);
+
+    return () => {
+      socket.off('agent-response:audio-chunk', handleAudioChunk);
+      socket.off('agent-response:audio-end', handleAudioEnd);
+    };
+  }, [isGettingAgentAnswer]);
+
+  // get agent voice ansewr chunk by chunk
+  const processNextChunk = () => {
+    const sb = sourceBufferRef.current;
+    if (
+      !sb ||
+      isProcessingRef.current ||
+      chunkQueueRef.current.length === 0 ||
+      sb.updating
+    ) {
+      return;
+    }
+
+    isProcessingRef.current = true;
+    const data = chunkQueueRef.current.shift()!;
+
+    try {
+      sb.appendBuffer(new Uint8Array(data));
+    } catch (error) {
+      console.error('Error appending buffer:', error);
+      isProcessingRef.current = false;
+    }
+  };
+
   const nothingInChatYet = !chatHistory.length;
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        width: '100%',
-        height: '100%',
-        justifyContent: 'center',
-        alignItems: 'center',
-      }}
-    >
+    <>
+      <audio ref={audioRef} autoPlay />
       <div
         style={{
           display: 'flex',
-          width: '50%',
-          flexDirection: 'column',
-          gap: 20,
+          width: '100%',
+          height: '100%',
+          justifyContent: 'center',
+          alignItems: 'center',
         }}
       >
         <div
           style={{
-            width: '100%',
-            height: 500,
-            overflowY: 'scroll',
-            overflowX: 'hidden',
+            display: 'flex',
+            width: '50%',
+            flexDirection: 'column',
+            gap: 20,
           }}
         >
           <div
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              paddingRight: 25,
-              gap: 20,
-            }}
-          >
-            {nothingInChatYet ? (
-              <div
-                style={{
-                  display: 'flex',
-                  height: '100%',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                }}
-              >
-                Nothing in chat yet
-              </div>
-            ) : (
-              chatHistory.map((message) => <Message message={message} />)
-            )}
-          </div>
-        </div>
-        {isMenuOpened ? (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 5,
-              backgroundColor: '#303030',
               width: '100%',
-              borderRadius: 20,
-              padding: 10,
+              height: 500,
+              overflowY: 'scroll',
+              overflowX: 'hidden',
             }}
           >
             <div
               style={{
                 display: 'flex',
-                flexDirection: 'row',
-                justifyContent: 'space-between',
+                flexDirection: 'column',
+                height: '100%',
+                width: 'calc(100% - 25px)',
+                paddingRight: 25,
+                gap: 20,
               }}
             >
-              {isRecording && (
+              {nothingInChatYet ? (
                 <div
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
+                    height: '100%',
                     justifyContent: 'center',
-                    gap: 20,
+                    alignItems: 'center',
                   }}
                 >
-                  <span className='recording'></span>
-                  <div>Recording...</div>
+                  Nothing in chat yet
                 </div>
+              ) : (
+                chatHistory.map((message) => <Message message={message} />)
               )}
+            </div>
+          </div>
+          {isMenuOpened ? (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 5,
+                backgroundColor: '#303030',
+                width: '100%',
+                borderRadius: 20,
+                padding: 10,
+              }}
+            >
               <div
                 style={{
                   display: 'flex',
                   flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  gap: 10,
-                  marginLeft: 'auto',
+                  justifyContent: isRecording ? 'space-between' : 'flex-end',
                 }}
               >
-                <button
-                  title='Cancel recording'
-                  onClick={handleCancelRecording}
-                  disabled
+                {isRecording && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginLeft: 20,
+                      gap: 20,
+                    }}
+                  >
+                    <span className='recording'></span>
+                    <div>Recording...</div>
+                  </div>
+                )}
+                <div
                   style={{
-                    backgroundColor: 'transparent',
-                    borderRadius: '100%',
-                    padding: 7,
                     display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                    marginRight: 20,
+                    // marginLeft: 'auto',
                   }}
                 >
-                  <XIcon size={20} />
-                </button>
-                <button
-                  title='Submit speech'
-                  style={{
-                    backgroundColor: 'transparent',
-                    borderRadius: '100%',
-                    padding: 7,
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                  }}
-                  onClick={handleSubmitVoice}
-                >
-                  {isSubmittingRecording ? (
-                    <span className='loader'></span>
-                  ) : (
-                    <CheckIcon size={20} />
-                  )}
-                </button>
+                  <button
+                    title='Cancel recording'
+                    onClick={handleCancelRecording}
+                    disabled
+                    style={{
+                      backgroundColor: 'transparent',
+                      borderRadius: '100%',
+                      padding: 7,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <XIcon size={20} />
+                  </button>
+                  <button
+                    title='Submit speech'
+                    style={{
+                      backgroundColor: 'transparent',
+                      borderRadius: '100%',
+                      padding: 7,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                    onClick={handleSubmitVoice}
+                  >
+                    {isSubmittingRecording ? (
+                      <span className='loader'></span>
+                    ) : (
+                      <CheckIcon size={20} />
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <button
-            style={{
-              width: '100%',
-              backgroundColor: '#00FF7F',
-              padding: 10,
-              borderRadius: 20,
-            }}
-            onClick={handleStartRecording}
-          >
-            <span style={{ color: '#303030' }}>
-              <strong>Start recording</strong>
-            </span>
-          </button>
-        )}
+          ) : (
+            <button
+              style={{
+                width: '100%',
+                backgroundColor: '#00FF7F',
+                padding: 10,
+                borderRadius: 20,
+              }}
+              onClick={handleStartRecording}
+            >
+              <span style={{ color: '#303030' }}>
+                <strong>Start recording</strong>
+              </span>
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 

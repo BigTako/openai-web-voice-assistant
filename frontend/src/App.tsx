@@ -64,7 +64,7 @@ function App() {
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
   const [isGettingAgentAnswer, setIsGettingAgentAnwer] = useState(false);
-
+  const [finalSearchUrl, setFinalSearchUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const mediaSourceRef = useRef<MediaSource | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
@@ -138,6 +138,7 @@ function App() {
       console.log('Started recording voice...');
       setIsMenuOpened(true);
       setIsRecording(true);
+      setFinalSearchUrl(null);
       const response = (await socket
         .emitWithAck('voice-file-stream:init')
         .then((data) => {
@@ -247,28 +248,52 @@ function App() {
 
   // get agent text answer chunk by chunk
   useEffect(() => {
-    socket.on('agent-response:text-chunk', (chunk) => {
-      console.log(chunk);
-      setChatHistory((prev) => {
-        // Append delta to last assistant message
-        const updated = [...prev];
-        const idx = updated.length - 1;
-        const chatMessage = updated[idx];
-        if (chatMessage) {
-          // Create a new object instead of mutating the existing one
-          updated[idx] = {
-            ...chatMessage,
-            content: chatMessage.content ? chatMessage.content + chunk : chunk,
-            status: 'created',
-          };
-        }
-        return updated;
+    try {
+      socket.on('agent-response:text-chunk', (chunk) => {
+        setChatHistory((prev) => {
+          // Append delta to last assistant message
+          const updated = [...prev];
+          const idx = updated.length - 1;
+          const chatMessage = updated[idx];
+          if (chatMessage) {
+            // Create a new object instead of mutating the existing one
+            updated[idx] = {
+              ...chatMessage,
+              content: chatMessage.content
+                ? chatMessage.content + chunk
+                : chunk,
+              status: 'created',
+            };
+          }
+          return updated;
+        });
       });
-    });
-    return () => {
-      socket.off('agent-response:text-chunk');
-    };
-  }, []);
+      socket.on('agent-response:text-end', () => {
+        console.log('Agent text response is ended...');
+        if (finalSearchUrl) {
+          setChatHistory((prev) => [
+            ...prev,
+            {
+              from: 'bot',
+              content: finalSearchUrl,
+              status: 'created',
+            },
+          ]);
+          return;
+        }
+        console.warn('Text ended but final search url has not yet come');
+      });
+
+      return () => {
+        socket.off('agent-response:text-chunk');
+        socket.off('agent-response:text-end');
+      };
+    } catch (error) {
+      console.log('Error while streaming agent text answer.Please try again.');
+      console.log(error);
+      pushError(error);
+    }
+  }, [finalSearchUrl, pushError]);
 
   // Initialize MediaSource once on component mount
   useEffect(() => {
@@ -303,6 +328,24 @@ function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    // finalSearchUrl
+    try {
+      socket.on('receive-search-url', (url) => {
+        console.log(`Received final search url: ${url}`);
+        if (!url) throw new Error('No url in the response');
+        setFinalSearchUrl(url);
+      });
+    } catch (error) {
+      console.log('Error while receiving search url');
+      console.log(error);
+      pushError(error);
+    }
+    return () => {
+      socket.off('receive-search-url');
+    };
+  }, [pushError]);
 
   // Handle audio streaming for each agent response
   useEffect(() => {

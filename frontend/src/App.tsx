@@ -43,6 +43,7 @@ function Message({ message }: { message: TMessage }) {
               ? '#303030'
               : 'transparent',
           borderRadius: 10,
+          wordBreak: 'break-all',
         }}
       >
         {(status === 'created' || status === 'error') && (
@@ -79,7 +80,16 @@ function App() {
   const mediaSourceRef = useRef<MediaSource | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
   const chunkQueueRef = useRef<ArrayBuffer[]>([]);
+  const endOfChatRef = useRef<HTMLDivElement | null>(null);
   const isProcessingRef = useRef(false);
+
+  const scrollToBottomOfTheChat = useCallback(() => {
+    if (endOfChatRef.current) {
+      endOfChatRef.current.scrollIntoView({
+        behavior: 'smooth',
+      });
+    }
+  }, []);
 
   function checkResponseError<T>(response: TSocketResponse<T>) {
     if (response.status === 'error') {
@@ -237,11 +247,33 @@ function App() {
         const lastUserMessage = chatHistory
           .filter((message) => message.from === 'user')
           .pop();
-        const response = await socket.emitWithAck('agent-answer:stream', {
+        const response = (await socket.emitWithAck('agent-answer', {
           prompt: lastUserMessage?.content,
-          formats: ['text', 'voice'],
-        });
+          streamVoice: true,
+        })) as TSocketResponse<{ text: string }>;
         checkResponseError(response);
+        const agentTextAnswer = response.data?.text;
+
+        if (agentTextAnswer) {
+          setChatHistory((prev) => {
+            // Append delta to last assistant message
+            const updated = [...prev];
+            const idx = updated.length - 1;
+            const chatMessage = updated[idx];
+            if (chatMessage) {
+              // Create a new object instead of mutating the existing one
+              updated[idx] = {
+                ...chatMessage,
+                content: agentTextAnswer,
+                status: 'created',
+              };
+            }
+
+            return updated;
+          });
+        } else {
+          throw new Error('No answer from agent. Please try again.');
+        }
       }
       try {
         console.log('Requested agent answer...');
@@ -254,57 +286,37 @@ function App() {
         setIsGettingAgentAnwer(false);
       }
     }
-  }, [isGettingAgentAnswer, chatHistory, pushError]);
+  }, [isGettingAgentAnswer, chatHistory, pushError, finalSearchUrl]);
 
-  // get agent text answer chunk by chunk
-  useEffect(() => {
-    try {
-      socket.on('agent-response:text-chunk', (chunk) => {
-        setChatHistory((prev) => {
-          // Append delta to last assistant message
-          const updated = [...prev];
-          const idx = updated.length - 1;
-          const chatMessage = updated[idx];
-          if (chatMessage) {
-            // Create a new object instead of mutating the existing one
-            updated[idx] = {
-              ...chatMessage,
-              content: chatMessage.content
-                ? chatMessage.content + chunk
-                : chunk,
-              status: 'created',
-            };
-          }
-          return updated;
-        });
-      });
-      socket.on('agent-response:text-end', () => {
-        console.log('Agent text response is ended...');
-        if (finalSearchUrl) {
-          setChatHistory((prev) => [
-            ...prev,
-            {
-              from: 'bot',
-              contentType: 'html',
-              content: `<a href="${finalSearchUrl}" target="_blank">Click here to review search results</a>`,
-              status: 'created',
-            },
-          ]);
-          return;
-        }
-        console.warn('Text ended but final search url has not yet come');
-      });
+  // getting and setting up final url
+  // useEffect(() => {
+  //   try {
+  //     socket.on('agent-response:text-end', () => {
+  //       console.log('Agent text response is ended...');
+  //       if (finalSearchUrl) {
+  //         setChatHistory((prev) => [
+  //           ...prev,
+  //           {
+  //             from: 'bot',
+  //             contentType: 'html',
+  //             content: `<a href="${finalSearchUrl}" target="_blank">Click here to review search results</a>`,
+  //             status: 'created',
+  //           },
+  //         ]);
+  //         return;
+  //       }
+  //       console.warn('Text ended but final search url has not yet come');
+  //     });
 
-      return () => {
-        socket.off('agent-response:text-chunk');
-        socket.off('agent-response:text-end');
-      };
-    } catch (error) {
-      console.log('Error while streaming agent text answer.Please try again.');
-      console.log(error);
-      pushError(error);
-    }
-  }, [finalSearchUrl, pushError]);
+  //     return () => {
+  //       socket.off('agent-response:text-end');
+  //     };
+  //   } catch (error) {
+  //     console.log('Error while getting final url.Please try again.');
+  //     console.log(error);
+  //     pushError(error);
+  //   }
+  // });
 
   // Initialize MediaSource once on component mount
   useEffect(() => {
@@ -406,6 +418,30 @@ function App() {
     };
   }, [isGettingAgentAnswer]);
 
+  useEffect(() => {
+    scrollToBottomOfTheChat();
+  }, [chatHistory, scrollToBottomOfTheChat]);
+
+  useEffect(() => {
+    socket.on('setup-final-search-url', () => {
+      if (finalSearchUrl) {
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            from: 'bot',
+            contentType: 'html',
+            content: `<a href="${finalSearchUrl}" target="_blank">Click here to review search results</a>`,
+            status: 'created',
+          },
+        ]);
+        setFinalSearchUrl(null);
+      }
+    });
+    return () => {
+      socket.off('setup-final-search-url');
+    };
+  }, [finalSearchUrl]);
+
   // get agent voice ansewr chunk by chunk
   const processNextChunk = () => {
     const sb = sourceBufferRef.current;
@@ -483,6 +519,7 @@ function App() {
               ) : (
                 chatHistory.map((message) => <Message message={message} />)
               )}
+              <div id='end-of-chat' ref={endOfChatRef}></div>
             </div>
           </div>
           {isMenuOpened ? (

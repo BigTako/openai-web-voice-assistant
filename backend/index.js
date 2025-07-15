@@ -4,7 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const { Server: SocketIOServer } = require('socket.io');
 require('dotenv').config();
-const { Agent, run } = require('@openai/agents');
+const { Agent, run, user, assistant } = require('@openai/agents');
 const OpenAI = require('openai');
 const { OPENAI_API_KEY } = process.env;
 
@@ -70,7 +70,12 @@ const io = new SocketIOServer(server, {
 /**
  * Stores active voice streaming file names.
  */
-const activeStreams = new Map();
+const activeStreamsMap = new Map();
+
+/**
+ * Stores chat history for each socket.
+ */
+const chatHistoryMap = new Map();
 
 const VOICE_FILES_DIR = './voiceFiles';
 const VOICE_FILE_EXTENTION = 'webm';
@@ -86,7 +91,7 @@ if (!fs.existsSync(VOICE_FILES_DIR)) {
 function getStreamByFilename(fileName) {
   if (!fileName) throw new Error(`Error: filename is not provided`);
 
-  const stream = activeStreams.get(fileName);
+  const stream = activeStreamsMap.get(fileName);
 
   if (!stream)
     throw new Error('Error: stream is not initialized by this filename');
@@ -154,7 +159,7 @@ io.on('connection', (socket) => {
       const fileName = `${socket.id}-${Date.now()}`;
       const filePath = `${VOICE_FILES_DIR}/${fileName}.${VOICE_FILE_EXTENTION}`;
       const writeStream = fs.createWriteStream(filePath);
-      activeStreams.set(fileName, writeStream);
+      activeStreamsMap.set(fileName, writeStream);
       callback({
         status: 'success',
         data: {
@@ -276,41 +281,26 @@ io.on('connection', (socket) => {
     console.log('[LOG] voice-file-stream:destory called');
     try {
       const { prompt, formats } = body; // prompt: string, formats = ['text', 'voice']
-      const result = await run(supportAgent, prompt, { stream: true });
+      const history = chatHistoryMap.get(socket.id) || [];
 
-      // for await (const event of result) {
-      //   // these are the raw events from the model
-      //   if (event.type === 'raw_model_stream_event') {
-      //     const isDelta = event.data.type === 'output_text_delta';
-      //     const delta = event.data.delta;
-      //     if (isDelta && delta) {
-      //       if (formats.includes('text')) {
-      //         socket.emit('agent-response:text-chunk', delta);
-      //       }
-      //       if (formats.includes('voice')) {
-      //         const response = await openai.audio.speech.create({
-      //           model: 'gpt-4o-mini-tts',
-      //           voice: 'coral',
-      //           input: text,
-      //           instructions: 'Speak in a cheerful and positive tone.',
-      //           response_format: 'mp3', // stream-friendly
-      //         });
+      history.push(user(prompt));
+      chatHistoryMap.set(socket.id, history);
 
-      //       }
-      //     }
-      //   }
-      // }
+      const result = await run(supportAgent, history, { stream: true });
       const streamText = formats.includes('text');
       const streamVoice = formats.includes('voice');
       let textBuffer = '';
       let sentenceBuffer = '';
+      let agentAnswerBuffer = '';
 
       for await (const event of result) {
         if (event.type === 'raw_model_stream_event') {
           const isDelta = event.data.type === 'output_text_delta';
           const delta = event.data.delta;
+
           if (isDelta && delta) {
             if (streamText) {
+              agentAnswerBuffer += delta;
               socket.emit('agent-response:text-chunk', delta);
             }
 
@@ -360,6 +350,12 @@ io.on('connection', (socket) => {
       }
 
       await result.completed;
+
+      // update chat history to reflect agent's answer;
+      history.push(assistant(agentAnswerBuffer));
+      chatHistoryMap.set(socket.id, history);
+
+      // console.log({ history: chatHistoryMap.get(socket.id) });
 
       if (streamVoice) {
         socket.emit('agent-response:audio-end');

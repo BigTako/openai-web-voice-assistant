@@ -19,10 +19,10 @@ const openai = new OpenAI({
   apiKey: OPENAI_API_KEY,
 });
 
-const supportAgentInstruction = `
+const ttsModelInstruction = `
 # Personality and Tone
 ## Identity
-Speask softly and politely, without any spices in emotions, in general act as helpful assistant.
+Speask politely and vividly, but without any spices in emotions, in general act as helpful assistant.
 
 ## Task
 Your task is to gather information about real-estate search criterias, form a search URL and return it to user. If user asks questions not related to real-estate search,
@@ -32,23 +32,25 @@ please say that you can't answer the quesiton, you can only gather information a
 patient and serious
 
 ## Tone
-polite and authoritative
+polite and authoritative but at the same time vivid and at a medium pace 
 
 ## Level of Enthusiasm
-calm and measured
+60% calm and measured and 40% enthusiastic
 
 ## Level of Formality
 professional language, for example: “Good afternoon, how may I assist you?”
 
 ## Level of Emotion
-Something in the middle, act as customer support agent, which is here to help client but rather formal
+A little bit emoutional, act as customer support agent, which is here to help client but rather formal
 
 ## Filler Words
 Do not include filter words like “um,” “uh,” "hm," etc...
 
 ## Pacing
-Average speed of human talk, do not talk to fast and too slow
+Fast
+`;
 
+const supportAgentInstruction = `
 ## Other details
 Please provide your responce in form of spoken text, since it will be sounded out after. The output text should be easy to pronounce.
 Do not use numbers and use punctuation signs to form gramaticaly correct sentences.
@@ -387,6 +389,14 @@ io.on('connection', (socket) => {
       let sentenceBuffer = '';
       let agentAnswerBuffer = '';
 
+      const ttsConfig = (inputText) => ({
+        model: 'gpt-4o-mini-tts',
+        voice: 'coral',
+        input: inputText,
+        instructions: ttsModelInstruction,
+        response_format: 'mp3',
+      });
+
       for await (const event of result) {
         if (event.type === 'raw_model_stream_event') {
           const isDelta = event.data.type === 'output_text_delta';
@@ -413,13 +423,9 @@ io.on('connection', (socket) => {
                 const completeSentence = sentences[0] + (sentences[1] || '');
 
                 // Generate audio for complete sentence
-                const response = await openai.audio.speech.create({
-                  model: 'gpt-4o-mini-tts',
-                  voice: 'coral',
-                  input: completeSentence,
-                  instructions: 'Speak in a cheerful and positive tone.',
-                  response_format: 'mp3',
-                });
+                const response = await openai.audio.speech.create(
+                  ttsConfig(completeSentence)
+                );
 
                 // Stream the audio chunks
                 for await (const chunk of response.body) {
@@ -440,13 +446,9 @@ io.on('connection', (socket) => {
 
       // Handle any remaining text in buffer
       if (streamVoice && sentenceBuffer.trim()) {
-        const response = await openai.audio.speech.create({
-          model: 'gpt-4o-mini-tts',
-          voice: 'coral',
-          input: sentenceBuffer,
-          instructions: 'Speak in a cheerful and positive tone.',
-          response_format: 'mp3',
-        });
+        const response = await openai.audio.speech.create(
+          ttsConfig(sentenceBuffer)
+        );
 
         for await (const chunk of response.body) {
           socket.emit('agent-response:audio-chunk', chunk);
@@ -479,35 +481,6 @@ io.on('connection', (socket) => {
   // TTS events
 
   // Shared
-
-  // socket.on('speak', async ({ text }) => {
-  //   try {
-  //     console.log('Started receiving speaking requests...');
-  //     const response = await openai.audio.speech.create({
-  //       model: 'gpt-4o-mini-tts',
-  //       voice: 'coral',
-  //       input: text,
-  //       instructions: 'Speak in a cheerful and positive tone.',
-  //       response_format: 'mp3', // stream-friendly
-  //     });
-
-  //     let chunkIndex = 0;
-  //     const stream = response.body; // Node Readable
-  //     console.log(stream);
-
-  //     for await (const chunk of stream) {
-  //       socket.emit('audio-chunk', {
-  //         data: chunk,
-  //         index: chunkIndex++,
-  //         timestamp: Date.now(),
-  //       });
-  //     }
-  //     socket.emit('audio-end');
-  //   } catch (err) {
-  //     console.log(err);
-  //     socket.emit('audio-error', { message: err.message });
-  //   }
-  // });
 
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);

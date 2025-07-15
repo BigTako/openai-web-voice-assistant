@@ -6,6 +6,7 @@ import { socket } from './utils/socketClient';
 type TMessage = {
   from: TSenderType;
   content?: string;
+  contentType?: 'text' | 'html';
   recordingFileName?: string;
   status: 'created' | 'pending' | 'error';
 };
@@ -18,6 +19,7 @@ type TSocketResponse<D> = {
 
 function Message({ message }: { message: TMessage }) {
   const { from, content, status } = message;
+  const contentType = message.contentType || 'text';
   return (
     <div
       style={{
@@ -43,7 +45,15 @@ function Message({ message }: { message: TMessage }) {
           borderRadius: 10,
         }}
       >
-        {(status === 'created' || status === 'error') && <>{content}</>}
+        {(status === 'created' || status === 'error') && (
+          <>
+            {contentType === 'text' ? (
+              content
+            ) : (
+              <span dangerouslySetInnerHTML={{ __html: content || '' }} />
+            )}
+          </>
+        )}
         {status === 'pending' && (
           <div
             style={{ width: 40, height: 20 }}
@@ -275,7 +285,8 @@ function App() {
             ...prev,
             {
               from: 'bot',
-              content: finalSearchUrl,
+              contentType: 'html',
+              content: `<a href="${finalSearchUrl}" target="_blank">Click here to review search results</a>`,
               status: 'created',
             },
           ]);

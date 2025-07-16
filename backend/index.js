@@ -181,9 +181,19 @@ io.on('connection', (socket) => {
           }
         });
 
+        url.searchParams.append('slug', 'jeff-cook-app');
+        url.searchParams.append(
+          'polygon',
+          '34.455113,-81.918993,33.642698,-81.92174%2C33.658703,-80.238085%2C34.473229,-80.257311'
+        );
+        url.searchParams.append(
+          'bounds',
+          '33.22357,-82.943079,34.936427,-79.23794'
+        );
+
         const stringURL = url.toString();
 
-        console.log({ stringURL });
+        // console.log({ stringURL });
 
         socket.emit('receive-search-url', stringURL);
         // call socket event here

@@ -102,6 +102,10 @@ function App() {
     }
   }, []);
 
+  const showDevLogs = import.meta.env.VITE_NODE_ENV === 'development';
+
+  // console.log({ showDevLogs });
+
   function checkResponseError<T>(response: TSocketResponse<T>) {
     if (response.status === 'error') {
       const defaultError = 'Something went wrong.Please try again.';
@@ -113,7 +117,10 @@ function App() {
   const handleSubmitVoice = async () => {
     try {
       setIsSubmittingRecording(true);
-      console.log('Finished recording and started processing transcription...');
+      if (showDevLogs)
+        console.log(
+          'Finished recording and started processing transcription...'
+        );
       recorder?.stop();
       const response = (await socket.emitWithAck('get-transacription', {
         fileName: pendingFileName,
@@ -166,7 +173,7 @@ function App() {
 
   const handleStartRecording = async () => {
     try {
-      console.log('Started recording voice...');
+      if (showDevLogs) console.log('Started recording voice...');
       setIsMenuOpened(true);
       setIsRecording(true);
       setFinalSearchUrl(null);
@@ -240,7 +247,7 @@ function App() {
       }
 
       try {
-        console.log('Started streaming audio...');
+        if (showDevLogs) console.log('Started streaming audio...');
         streamAudio();
       } catch (error) {
         console.log('Error while streaming audio');
@@ -250,7 +257,7 @@ function App() {
         setIsRecording(false);
       }
     }
-  }, [pendingFileName, pushError]);
+  }, [pendingFileName, pushError, showDevLogs]);
 
   // request agent answer
   useEffect(() => {
@@ -288,7 +295,7 @@ function App() {
         }
       }
       try {
-        console.log('Requested agent answer...');
+        if (showDevLogs) console.log('Requested agent answer...');
         requestAgentAnswer();
       } catch (error) {
         console.log('Error while requesting agent answer');
@@ -298,7 +305,13 @@ function App() {
         setIsGettingAgentAnwer(false);
       }
     }
-  }, [isGettingAgentAnswer, chatHistory, pushError, finalSearchUrl]);
+  }, [
+    isGettingAgentAnswer,
+    chatHistory,
+    pushError,
+    finalSearchUrl,
+    showDevLogs,
+  ]);
 
   useEffect(() => {
     const mediaSource = new MediaSource();
@@ -337,7 +350,7 @@ function App() {
     // finalSearchUrl
     try {
       socket.on('receive-search-url', (url) => {
-        console.log(`Received final search url: ${url}`);
+        if (showDevLogs) console.log(`Received final search url: ${url}`);
         if (!url) throw new Error('No url in the response');
         setFinalSearchUrl(url);
       });
@@ -349,7 +362,7 @@ function App() {
     return () => {
       socket.off('receive-search-url');
     };
-  }, [pushError]);
+  }, [pushError, showDevLogs]);
 
   // Handle audio streaming for each agent response
   useEffect(() => {
@@ -382,7 +395,7 @@ function App() {
       const flush = () => {
         if (!isProcessingRef.current && chunkQueueRef.current.length === 0) {
           // Don't end the stream, just stop processing for this response
-          console.log('Audio response completed');
+          if (showDevLogs) console.log('Audio response completed');
         } else {
           setTimeout(flush, 10);
         }
@@ -397,7 +410,7 @@ function App() {
       socket.off('agent-response:audio-chunk', handleAudioChunk);
       socket.off('agent-response:audio-end', handleAudioEnd);
     };
-  }, [isGettingAgentAnswer]);
+  }, [isGettingAgentAnswer, showDevLogs]);
 
   useEffect(() => {
     scrollToBottomOfTheChat();
@@ -405,6 +418,7 @@ function App() {
 
   useEffect(() => {
     socket.on('setup-final-search-url', () => {
+      // console.log(`Append messsage with final search url ${finalSearchUrl}`);
       if (finalSearchUrl) {
         setChatHistory((prev) => [
           ...prev,
@@ -507,7 +521,12 @@ function App() {
                   Nothing in chat yet
                 </div>
               ) : (
-                chatHistory.map((message) => <Message message={message} />)
+                chatHistory.map((message, i) => (
+                  <Message
+                    key={`${message.from}-message-${i}`}
+                    message={message}
+                  />
+                ))
               )}
               <div id='end-of-chat' ref={endOfChatRef}></div>
             </div>

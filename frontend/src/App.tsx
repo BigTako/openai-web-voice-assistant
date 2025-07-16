@@ -159,12 +159,9 @@ function App() {
       setIsMenuOpened(true);
       setIsRecording(true);
       setFinalSearchUrl(null);
-      const response = (await socket
-        .emitWithAck('voice-file-stream:init')
-        .then((data) => {
-          console.log(data);
-          return data;
-        })) as TSocketResponse<{ fileName: string }>;
+      const response = (await socket.emitWithAck(
+        'voice-file-stream:init'
+      )) as TSocketResponse<{ fileName: string }>;
       checkResponseError(response);
       const filename = response.data?.fileName;
       // console.log({ filename });
@@ -288,37 +285,6 @@ function App() {
     }
   }, [isGettingAgentAnswer, chatHistory, pushError, finalSearchUrl]);
 
-  // getting and setting up final url
-  // useEffect(() => {
-  //   try {
-  //     socket.on('agent-response:text-end', () => {
-  //       console.log('Agent text response is ended...');
-  //       if (finalSearchUrl) {
-  //         setChatHistory((prev) => [
-  //           ...prev,
-  //           {
-  //             from: 'bot',
-  //             contentType: 'html',
-  //             content: `<a href="${finalSearchUrl}" target="_blank">Click here to review search results</a>`,
-  //             status: 'created',
-  //           },
-  //         ]);
-  //         return;
-  //       }
-  //       console.warn('Text ended but final search url has not yet come');
-  //     });
-
-  //     return () => {
-  //       socket.off('agent-response:text-end');
-  //     };
-  //   } catch (error) {
-  //     console.log('Error while getting final url.Please try again.');
-  //     console.log(error);
-  //     pushError(error);
-  //   }
-  // });
-
-  // Initialize MediaSource once on component mount
   useEffect(() => {
     const mediaSource = new MediaSource();
     mediaSourceRef.current = mediaSource;

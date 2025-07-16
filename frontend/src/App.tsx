@@ -17,6 +17,15 @@ type TSocketResponse<D> = {
   data?: D;
 };
 
+function broswerSupportsSoundingOut() {
+  const supportedBrowsers = ['Chrome', 'Edge', 'OPR', 'Opera'];
+  const userAgent = navigator.userAgent;
+  const isCurrentBrowserSupported = supportedBrowsers.some((bname) =>
+    userAgent.includes(bname)
+  );
+  return isCurrentBrowserSupported;
+}
+
 function Message({ message }: { message: TMessage }) {
   const { from, content, status } = message;
   const contentType = message.contentType || 'text';
@@ -76,6 +85,8 @@ function App() {
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
   const [isGettingAgentAnswer, setIsGettingAgentAnwer] = useState(false);
   const [finalSearchUrl, setFinalSearchUrl] = useState<string | null>(null);
+  const [isVoiceOverResponsesSupported, setIsVoiceOverResponsesSupported] =
+    useState<boolean | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const mediaSourceRef = useRef<MediaSource | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
@@ -182,6 +193,10 @@ function App() {
   const handleCancelRecording = () => {
     setIsRecording(false);
   };
+
+  useEffect(() => {
+    setIsVoiceOverResponsesSupported(broswerSupportsSoundingOut());
+  }, []);
 
   // recording voice from microfone
   useEffect(() => {
@@ -432,6 +447,8 @@ function App() {
   };
 
   const nothingInChatYet = !chatHistory.length;
+  const showVoiceOverNotSupportedMessage =
+    isVoiceOverResponsesSupported === false;
 
   return (
     <>
@@ -453,6 +470,13 @@ function App() {
             gap: 20,
           }}
         >
+          {showVoiceOverNotSupportedMessage && (
+            <div style={{ color: 'gray' }}>
+              😔 Unfortunatelly, current browser does not support voice-over
+              responses, please use chromium based one like Chrome, Opera, Brave
+              or Edge
+            </div>
+          )}
           <div
             style={{
               width: '100%',

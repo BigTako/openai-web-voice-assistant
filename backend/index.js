@@ -3,17 +3,22 @@ const cors = require('cors');
 const http = require('http');
 const fs = require('fs');
 const { Server: SocketIOServer } = require('socket.io');
-require('dotenv').config();
-const { Agent, run, user, assistant, tool } = require('@openai/agents');
+const { Agent, run, user, tool } = require('@openai/agents');
 const OpenAI = require('openai');
-const { OPENAI_API_KEY } = process.env;
 const { z } = require('zod');
 const path = require('path');
 
+require('dotenv').config();
+const { OPENAI_API_KEY } = process.env;
+const whitelist = [process.env.CLIENT_URL];
+const nodeENV = process.env.NODE_ENV || 'development';
+// Start the server
+const PORT = process.env.PORT || 3000;
+
+console.log({ client: process.env.CLIENT_URL });
 // Setup Express
 const app = express();
 app.use(express.json());
-app.use(cors()); // allow CORS for all origins
 
 // Set up OpenAI Client
 const openai = new OpenAI({
@@ -83,7 +88,19 @@ Do not use numbers and use punctuation signs to form gramaticaly correct sentenc
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   // optional settings
-  cors: { origin: '*' },
+  cors: {
+    origin:
+      nodeENV === 'development'
+        ? '*'
+        : function (origin, callback) {
+            console.log({ origin, whitelist });
+            if (whitelist.indexOf(origin) !== -1) {
+              callback(null, true);
+            } else {
+              callback(new Error('Not allowed by CORS'));
+            }
+          },
+  },
 });
 
 /**
@@ -476,8 +493,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Start the server
-const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

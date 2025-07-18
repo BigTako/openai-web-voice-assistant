@@ -18,7 +18,7 @@
     "express": "^4.19.2",
     "nodemon": "^3.1.10",
     "openai": "^5.5.1",
-    "socket.io-stream": "^0.9.1",
+    "socket.io": "^4.8.1",
     "zod": "<=3.25.67"
   }
 }

@@ -8,6 +8,7 @@ const { Agent, run, user, assistant, tool } = require('@openai/agents');
 const OpenAI = require('openai');
 const { OPENAI_API_KEY } = process.env;
 const { z } = require('zod');
+const path = require('path');
 
 // Setup Express
 const app = express();
@@ -193,7 +194,7 @@ io.on('connection', (socket) => {
 
         const stringURL = url.toString();
 
-        // console.log({ stringURL });
+        console.log({ stringURL });
 
         socket.emit('receive-search-url', stringURL);
         // call socket event here
@@ -253,6 +254,8 @@ io.on('connection', (socket) => {
    */
   socket.on('voice-file-stream:init', (callback) => {
     console.log('[LOG] voice-file-stream:init called');
+    const ipAddress = socket.handshake.address;
+    console.log({ ipAddress });
     try {
       const fileName = `${socket.id}-${Date.now()}`;
       const filePath = `${VOICE_FILES_DIR}/${fileName}.${VOICE_FILE_EXTENTION}`;
@@ -369,6 +372,50 @@ io.on('connection', (socket) => {
       });
     }
   });
+
+  /**
+   * ADMIN ONLY - removes all voice files from folder
+   * @param body - contains prompt in form of text and configuration
+   * @returns - object with status and data (on failure with errorMessage set to error)
+   */
+  socket.on('voice-file-stream:remove-all', async (body, callback) => {
+    console.log('[LOG] voice-file-stream:remove-all called');
+    try {
+      console.log({ body });
+      const json = typeof body === 'string' ? JSON.parse(body) : body;
+      const { authToken } = json;
+      if (!authToken || authToken !== process.env.ADMIN_TOKEN) {
+        throw new Error(
+          'Unathorized: Please provide valid auth token in body to perform this action.'
+        );
+      }
+      fs.readdir(VOICE_FILES_DIR, (err, files) => {
+        if (err) {
+          console.error('Error reading directory:', err);
+          return;
+        }
+
+        for (const file of files) {
+          const filePath = path.join(VOICE_FILES_DIR, file);
+          fs.unlink(filePath, (unlinkErr) => {
+            if (unlinkErr) {
+              console.error(`Error deleting file ${filePath}:`, unlinkErr);
+            } else {
+              console.log(`Deleted: ${filePath}`);
+            }
+          });
+        }
+      });
+      callback({ status: 'success' });
+    } catch (error) {
+      console.log(error);
+      const message = error.message || 'Error while closing voice stream.';
+      callback({
+        status: 'error',
+        errorMessage: message,
+      });
+    }
+  });
   // Agent events
   /**
    * Receives a prompt from user answer in given formats.
@@ -409,89 +456,6 @@ io.on('connection', (socket) => {
 
         socket.emit('agent-response:audio-end');
       }
-      // const streamText = formats.includes('text');
-      // const streamVoice = formats.includes('voice');
-      // let sentenceBuffer = '';
-      // let agentAnswerBuffer = '';
-
-      // const ttsConfig = (inputText) => ({
-      //   model: 'gpt-4o-mini-tts',
-      //   voice: 'coral',
-      //   input: inputText,
-      //   instructions: ttsModelInstruction,
-      //   response_format: 'mp3',
-      // });
-
-      // for await (const event of result) {
-      //   if (event.type === 'raw_model_stream_event') {
-      //     const isDelta = event.data.type === 'output_text_delta';
-      //     const isReponseCompleted = event.data.type === 'response_done';
-
-      //     const delta = event.data.delta;
-      //     // console.log({
-      //     //   eventType: event.data.type,
-      //     //   dataEvent: event.data.event,
-      //     // });
-
-      //     if (isDelta && delta) {
-      //       if (streamText) {
-      //         agentAnswerBuffer += delta;
-      //         socket.emit('agent-response:text-chunk', delta);
-      //       }
-
-      //       if (streamVoice) {
-      //         sentenceBuffer += delta;
-
-      //         // Check if we have a complete sentence
-      //         if (sentenceBuffer.match(/[.!?]\s/)) {
-      //           const sentences = sentenceBuffer.split(/([.!?]\s)/);
-      //           const completeSentence = sentences[0] + (sentences[1] || '');
-
-      //           // Generate audio for complete sentence
-      //           const response = await openai.audio.speech.create(
-      //             ttsConfig(completeSentence)
-      //           );
-
-      //           // Stream the audio chunks
-      //           for await (const chunk of response.body) {
-      //             socket.emit('agent-response:audio-chunk', chunk);
-      //           }
-
-      //           // Update buffer with remaining text
-      //           sentenceBuffer = sentences.slice(2).join('');
-      //         }
-      //       }
-      //     }
-
-      //     if (isReponseCompleted) {
-      //       socket.emit('agent-response:text-end');
-      //     }
-      //   }
-      // }
-
-      // // Handle any remaining text in buffer
-      // if (streamVoice && sentenceBuffer.trim()) {
-      //   const response = await openai.audio.speech.create(
-      //     ttsConfig(sentenceBuffer)
-      //   );
-
-      //   for await (const chunk of response.body) {
-      //     socket.emit('agent-response:audio-chunk', chunk);
-      //   }
-      // }
-
-      // await result.completed;
-
-      // // update chat history to reflect agent's answer;
-      // history.push(assistant(agentAnswerBuffer));
-      // chatHistoryMap.set(socket.id, history);
-
-      // // console.log({ history: chatHistoryMap.get(socket.id) });
-
-      // if (streamVoice) {
-      //   socket.emit('agent-response:audio-end');
-      // }
-
       callback({ status: 'success' });
     } catch (error) {
       console.log(error);

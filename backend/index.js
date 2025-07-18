@@ -10,15 +10,33 @@ const path = require('path');
 
 require('dotenv').config();
 const { OPENAI_API_KEY } = process.env;
-const whitelist = [process.env.CLIENT_URL];
+const whitelist = process.env.CLIENT_WHITELIST?.split(',') || [];
 const nodeENV = process.env.NODE_ENV || 'development';
 // Start the server
 const PORT = process.env.PORT || 3000;
 
-console.log({ client: process.env.CLIENT_URL });
+console.log({ client: process.env.CLIENT_WHITELIST });
 // Setup Express
 const app = express();
 app.use(express.json());
+
+const server = http.createServer(app);
+const io = new SocketIOServer(server, {
+  // optional settings
+  cors: {
+    origin:
+      nodeENV === 'development'
+        ? '*'
+        : function (origin, callback) {
+            console.log({ origin, whitelist });
+            if (whitelist.indexOf(origin) !== -1) {
+              callback(null, true);
+            } else {
+              callback(new Error('Not allowed by CORS'));
+            }
+          },
+  },
+});
 
 // Set up OpenAI Client
 const openai = new OpenAI({
@@ -84,24 +102,6 @@ Do not use numbers and use punctuation signs to form gramaticaly correct sentenc
 // ========================
 // OpenAI assistant section
 // ========================
-
-const server = http.createServer(app);
-const io = new SocketIOServer(server, {
-  // optional settings
-  cors: {
-    origin:
-      nodeENV === 'development'
-        ? '*'
-        : function (origin, callback) {
-            console.log({ origin, whitelist });
-            if (whitelist.indexOf(origin) !== -1) {
-              callback(null, true);
-            } else {
-              callback(new Error('Not allowed by CORS'));
-            }
-          },
-  },
-});
 
 /**
  * Stores active voice streaming file names.

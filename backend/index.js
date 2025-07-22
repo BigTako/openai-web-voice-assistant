@@ -202,11 +202,11 @@ io.on('connection', (socket) => {
         url.searchParams.append('slug', 'jeff-cook-app');
         url.searchParams.append(
           'polygon',
-          '34.455113,-81.918993,33.642698,-81.92174%2C33.658703,-80.238085%2C34.473229,-80.257311'
+          '35.430659,-81.77488,34.898518,-81.761147,34.889507,-80.438668,35.507831,-80.405709'
         );
         url.searchParams.append(
           'bounds',
-          '33.22357,-82.943079,34.936427,-79.23794'
+          '34.857511,-81.79136,35.523035,-80.365884'
         );
 
         const stringURL = url.toString();
@@ -215,8 +215,12 @@ io.on('connection', (socket) => {
 
         socket.emit('receive-search-url', stringURL);
         // call socket event here
-        return 'Sharks are older than trees.';
-      } catch {
+        return 'The url is created successfuly! Notify client, that the link should be created below current message, user can click on it and see search results. If it`s not, tell the client to ask you for search link again.';
+      } catch (error) {
+        console.log(
+          'Failed to create search url, please ask client to try again.'
+        );
+        console.log(error);
         return 'Failed to create search url, please ask client to try again.';
       }
     },

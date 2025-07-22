@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckIcon, XIcon } from '@phosphor-icons/react';
+import { CheckIcon } from '@phosphor-icons/react';
 import './App.css';
 import { socket } from './utils/socketClient';
 
@@ -37,20 +37,22 @@ function Message({ message }: { message: TMessage }) {
         gap: 5,
       }}
     >
-      <h3 style={{ margin: 0, textAlign: 'start' }}>
+      <h3 className='message-title' style={{ margin: 0, textAlign: 'start' }}>
         {from === 'user' ? 'You' : '🤖 Bot'}
       </h3>
+
       <div
+        className={
+          status === 'error'
+            ? 'error-message'
+            : from === 'user'
+            ? 'user-message'
+            : 'bot-message'
+        }
         style={{
           textAlign: 'start',
           width: status === 'pending' ? 'fit-content' : '100%',
           padding: 10,
-          backgroundColor:
-            status === 'error'
-              ? 'red'
-              : from === 'user'
-              ? '#303030'
-              : 'transparent',
           borderRadius: 10,
           wordBreak: 'break-all',
         }}
@@ -197,9 +199,9 @@ function App() {
     }
   };
 
-  const handleCancelRecording = () => {
-    setIsRecording(false);
-  };
+  // const handleCancelRecording = () => {
+  //   setIsRecording(false);
+  // };
 
   useEffect(() => {
     setIsVoiceOverResponsesSupported(broswerSupportsSoundingOut());
@@ -504,8 +506,10 @@ function App() {
                 display: 'flex',
                 flexDirection: 'column',
                 height: '100%',
-                width: 'calc(100% - 25px)',
+                width: 'calc(100% - 35px)',
                 paddingRight: 25,
+                paddingLeft: 10,
+                // margin: 10,
                 gap: 20,
               }}
             >
@@ -528,16 +532,21 @@ function App() {
                   />
                 ))
               )}
-              <div id='end-of-chat' ref={endOfChatRef}></div>
+              <div
+                id='end-of-chat'
+                style={{ minHeight: 5 }}
+                ref={endOfChatRef}
+              ></div>
             </div>
           </div>
           {isMenuOpened ? (
             <div
+              className='recording-panel'
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 5,
-                backgroundColor: '#303030',
+                // backgroundColor: '#303030',
                 width: '100%',
                 borderRadius: 20,
                 padding: 10,
@@ -548,6 +557,7 @@ function App() {
                   display: 'flex',
                   flexDirection: 'row',
                   justifyContent: isRecording ? 'space-between' : 'flex-end',
+                  minHeight: isSubmittingRecording ? 40 : 30,
                 }}
               >
                 {isRecording && (
@@ -574,7 +584,7 @@ function App() {
                     // marginLeft: 'auto',
                   }}
                 >
-                  <button
+                  {/* <button
                     title='Cancel recording'
                     onClick={handleCancelRecording}
                     disabled
@@ -588,7 +598,7 @@ function App() {
                     }}
                   >
                     <XIcon size={20} />
-                  </button>
+                  </button> */}
                   <button
                     title='Submit speech'
                     style={{
@@ -604,7 +614,7 @@ function App() {
                     {isSubmittingRecording ? (
                       <span className='loader'></span>
                     ) : (
-                      <CheckIcon size={20} />
+                      <CheckIcon size={25} />
                     )}
                   </button>
                 </div>
@@ -612,12 +622,7 @@ function App() {
             </div>
           ) : (
             <button
-              style={{
-                width: '100%',
-                backgroundColor: '#00FF7F',
-                padding: 10,
-                borderRadius: 20,
-              }}
+              className='start-recoding-button'
               onClick={handleStartRecording}
             >
               <span style={{ color: '#303030' }}>

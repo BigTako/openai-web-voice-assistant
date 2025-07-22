@@ -45,6 +45,7 @@ button {
   cursor: pointer;
   transition: border-color 0.25s;
 }
+
 button:hover {
   border-color: #646cff;
 }
@@ -53,41 +54,37 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
-
-/* .loader {
+.start-recoding-button {
   width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: 1;
-  border: max(2px, min(5px, 0.1em)) dotted #fff;
-  border-radius: 50%;
-  display: inline-block;
-  position: relative;
-  box-sizing: border-box;
-  animation: rotation 2s linear infinite;
+  background-color: #00ff7f;
+  padding: 10px;
+  border-radius: 20px;
+  color: white;
 }
 
-@keyframes rotation {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-} */
+.message-title {
+  color: white;
+}
+
+.user-message {
+  color: white;
+  background-color: transparent;
+}
+
+.bot-message {
+  color: white;
+  background-color: #303030;
+}
+
+.error-message {
+  color: white;
+  background-color: red;
+}
+
+.recording-panel {
+  background-color: #303030;
+  color: white;
+}
 
 .loader {
   width: 100%;
@@ -95,7 +92,7 @@ button:focus-visible {
   max-width: 100%;
   max-height: 100%;
   aspect-ratio: 1;
-  border: max(2px, min(0.1em, 5px)) solid #fff;
+  border: max(2px, min(0.1em, 5px)) solid white;
   border-bottom-color: transparent;
   border-radius: 50%;
   display: inline-block;
@@ -161,3 +158,78 @@ button:focus-visible {
     background-position: 0% 50%, 50% 50%, 100% 100%;
   }
 }
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  .start-recoding-button {
+    color: white;
+    box-shadow: rgba(99, 99, 99, 0.2) 0px 2px 8px 0px;
+  }
+
+  .message-title {
+    color: #303030;
+  }
+
+  .user-message {
+    color: #303030;
+  }
+
+  .bot-message {
+    color: #303030;
+    background-color: transparent;
+    box-shadow: rgba(99, 99, 99, 0.2) 0px 2px 8px 0px;
+  }
+
+  .recording-panel {
+    background-color: transparent;
+    color: #303030;
+    box-shadow: rgba(99, 99, 99, 0.2) 0px 2px 8px 0px;
+  }
+
+  .loader {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 1;
+    border: max(2px, min(0.1em, 5px)) solid #303030;
+    border-bottom-color: transparent;
+    border-radius: 50%;
+    display: inline-block;
+    box-sizing: border-box;
+    animation: rotation 1s linear infinite;
+  }
+
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+/* .loader {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 1;
+  border: max(2px, min(5px, 0.1em)) dotted #fff;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+  box-sizing: border-box;
+  animation: rotation 2s linear infinite;
+}
+
+@keyframes rotation {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+} */

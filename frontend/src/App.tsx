@@ -54,7 +54,7 @@ function Message({ message }: { message: TMessage }) {
           width: status === 'pending' ? 'fit-content' : '100%',
           padding: 10,
           borderRadius: 10,
-          wordBreak: 'break-all',
+          wordBreak: 'break-word',
         }}
       >
         {(status === 'created' || status === 'error') && (

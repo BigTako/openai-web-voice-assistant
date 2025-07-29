@@ -193,9 +193,16 @@ io.on('connection', (socket) => {
 
         Object.keys(body).forEach((key) => {
           const value = body[key];
+          // console.log({ key, value });
           const isDefined = !(typeof value === 'undefined' || value === null);
           if (isDefined) {
-            url.searchParams.append(key, String(value));
+            if (key === 'keywords' && Array.isArray(value)) {
+              for (let keyword of value) {
+                url.searchParams.append(key, String(keyword));
+              }
+            } else {
+              url.searchParams.append(key, String(value));
+            }
           }
         });
 
